@@ -212,6 +212,23 @@ broom.mixed::tidy(team_efficiency_model_ml, effects = "ran_pars", conf.int = TRU
 broom.mixed::tidy(team_efficiency_model_ml, effects = "ran_vals", conf.int = TRUE)
 ```
 
+```{r}
+# Save Models
+saveRDS(panel_team_model, "Models/panel_team_model.rds")
+saveRDS(fit_player_gam, "Models/fit_player_gam.rds")
+saveRDS(team_efficiency_model, "Models/team_efficiency_model.rds")
+saveRDS(team_efficiency_model_ml, "Models/team_efficiency_model_ml.rds")
+
+# also save final data objects if you need plots/tables later
+saveRDS(panel_team_data, "Models/panel_team_data.rds")
+saveRDS(player_season, "Models/player_season.rds")
+saveRDS(team_efficiency_model_data, "Models/team_efficiency_model_data.rds")
+
+saveRDS(mls_salaries_2025, "Data/mls_salaries_2025.rds")
+saveRDS(team_model_data, "Data/team_model_data.rds")
+saveRDS(position_salary, "Data/position_salary.rds")
+```
+
 ---
 
 ## What each model does in your paper
