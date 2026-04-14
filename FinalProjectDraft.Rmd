@@ -282,6 +282,9 @@ When pooling all seasons without controlling for year effects, salary variables 
 
 ### Question
 
+Does team performance depend more on the salary disparity between highest and lowest paid starters, or on the amount of players earning $500k-$1.5M?
+
+
 ### Model specification
 
 ### Assumptions
