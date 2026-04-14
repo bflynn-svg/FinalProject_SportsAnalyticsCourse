@@ -1,0 +1,257 @@
+---
+title: "Cleaned_Up_Dom_Models"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r, include = FALSE}
+library(itscalledsoccer)
+library(tidyverse)
+library(mgcv)
+library(lme4)
+library(lmerTest)
+library(lubridate)
+library(broom)
+library(broom.mixed)
+
+asa_client <- AmericanSoccerAnalysis$new()
+
+players <- asa_client$get_players(leagues = "mls")
+teams   <- asa_client$get_teams(leagues = "mls")
+
+seasons <- 2013:2025
+
+### Build multi-season team panel
+
+```
+
+
+```{r, echo = FALSE}
+# Team performance by season
+asa_team_xgoals_panel <- asa_client$get_team_xgoals(
+  leagues = "mls",
+  season_name = seasons,
+  split_by_seasons = TRUE
+) |>
+  left_join(teams, by = "team_id")
+
+team_performance_panel <- asa_team_xgoals_panel |>
+  mutate(season_name = as.integer(season_name)) |>
+  group_by(team_id, team_name, season_name) |>
+  summarize(
+    xg_for = sum(xgoals_for, na.rm = TRUE),
+    xg_against = sum(xgoals_against, na.rm = TRUE),
+    xgd = xg_for - xg_against,
+    .groups = "drop"
+  )
+
+# Multi-season salary data
+mls_salaries_panel <- asa_client$get_player_salaries(
+  leagues = "mls",
+  season_name = seasons
+) |>
+  left_join(players, by = "player_id") |>
+  mutate(
+    season_name = as.integer(season_name),
+    team_id = as.character(team_id)
+  )
+
+team_salary_panel <- mls_salaries_panel |>
+  group_by(team_id, season_name) |>
+  summarize(
+    total_salary = sum(base_salary, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+panel_team_data <- team_performance_panel |>
+  mutate(team_id = as.character(team_id)) |>
+  left_join(team_salary_panel, by = c("team_id", "season_name")) |>
+  mutate(
+    log_salary = log(total_salary),
+    season_name = factor(season_name)
+  )
+```
+
+
+```{r, echo = FALSE}
+### Baseline team model
+
+
+panel_team_model <- lm(
+  xgd ~ log_salary + season_name,
+  data = panel_team_data
+)
+
+broom::tidy(panel_team_model, conf.int = TRUE)
+```
+
+
+```{r, echo = FALSE}
+### Build player-season dataset
+
+asa_player_gplus <- asa_client$get_player_goals_added(
+  leagues = "mls",
+  season_name = seasons,
+  split_by_seasons = TRUE,
+  split_by_teams = TRUE,
+  above_replacement = TRUE
+) |>
+  mutate(
+    season_name = as.integer(season_name),
+    team_id = as.character(team_id)
+  )
+
+player_salaries_panel <- asa_client$get_player_salaries(
+  leagues = "mls",
+  season_name = seasons
+) |>
+  left_join(players, by = "player_id") |>
+  mutate(
+    season_name = as.integer(season_name),
+    team_id = as.character(team_id)
+  ) |>
+  group_by(player_id, team_id, season_name) |>
+  summarize(
+    base_salary = mean(base_salary, na.rm = TRUE),
+    position = first(position),
+    .groups = "drop"
+  )
+
+player_season <- asa_player_gplus |>
+  left_join(
+    player_salaries_panel,
+    by = c("player_id", "team_id", "season_name")
+  ) |>
+  left_join(players |> select(player_id, birth_date), by = "player_id") |>
+  mutate(
+    log_salary = log(base_salary + 1),
+    position = factor(position),
+    age = season_name - year(birth_date)
+  )
+```
+
+```{r, echo = FALSE}
+### Player-level GAM
+
+fit_player_gam <- gam(
+  goals_added_above_replacement ~
+    s(log_salary, k = 5) +
+    position +
+    s(log_salary, by = position, k = 4),
+  data = player_season,
+  method = "REML"
+)
+
+broom::tidy(fit_player_gam, conf.int = TRUE)
+```
+
+```{r, echo = FALSE}
+### Aggregate predicted player value to team-season
+
+player_season <- player_season |>
+  mutate(
+    predicted_value = predict(fit_player_gam, newdata = player_season)
+  )
+
+team_efficiency <- player_season |>
+  group_by(team_id, season_name) |>
+  summarize(
+    predicted_team_value = sum(predicted_value * minutes_played / 90, na.rm = TRUE),
+    player_total_salary = sum(base_salary, na.rm = TRUE),
+    avg_age = mean(age, na.rm = TRUE),
+    pct_att = mean(position == "F"),
+    pct_midfielders = mean(position == "M"),
+    .groups = "drop"
+  )
+```
+
+```{r, echo = FALSE}
+### Main team model
+
+team_efficiency_model_data <- panel_team_data |>
+  mutate(
+    team_id = as.character(team_id),
+    season_name = as.integer(as.character(season_name))
+  ) |>
+  left_join(team_efficiency, by = c("team_id", "season_name")) |>
+  filter(!is.na(xgd), !is.na(predicted_team_value), !is.na(player_total_salary))
+
+team_efficiency_model <- lm(
+  xgd ~ predicted_team_value + player_total_salary +
+    factor(season_name) + avg_age + pct_att + pct_midfielders,
+  data = team_efficiency_model_data
+)
+
+broom::tidy(team_efficiency_model, conf.int = TRUE)
+```
+
+```{r, echo = FALSE}
+
+### Multilevel robustness model
+
+team_efficiency_model_data <- team_efficiency_model_data |>
+  mutate(
+    pred_val_s = as.numeric(scale(predicted_team_value)),
+    salary_s   = as.numeric(scale(player_total_salary)),
+    age_s      = as.numeric(scale(avg_age)),
+    pct_att_s  = as.numeric(scale(pct_att)),
+    pct_mid_s  = as.numeric(scale(pct_midfielders))
+  )
+
+team_efficiency_model_ml <- lmer(
+  xgd ~ pred_val_s + salary_s + age_s + pct_att_s + pct_mid_s +
+    (1 | team_id) + (1 | season_name),
+  data = team_efficiency_model_data
+)
+
+library(broom.mixed)
+
+broom.mixed::tidy(team_efficiency_model_ml, effects = "fixed", conf.int = TRUE)
+broom.mixed::tidy(team_efficiency_model_ml, effects = "ran_pars", conf.int = TRUE)
+broom.mixed::tidy(team_efficiency_model_ml, effects = "ran_vals", conf.int = TRUE)
+```
+
+---
+
+## What each model does in your paper
+
+Use this progression:
+
+### 1. Baseline team model
+Shows that raw spending alone has limited explanatory power.
+
+### 2. Player GAM
+Shows that salary translates into player value nonlinearly and differently by position.
+
+### 3. Main team efficiency model
+Shows that aggregated player value strongly predicts team performance, while salary is negative conditional on value.
+
+### 4. Multilevel model
+Shows the main result is robust after accounting for team- and season-level heterogeneity.
+
+---
+
+## What to report, model-wise
+
+### Definitely report
+- `panel_team_model`
+- `fit_player_gam`
+- `team_efficiency_model`
+- `team_efficiency_model_ml`
+
+### Do not report
+- 2025-only raw salary / DP / U22 regressions
+- interaction-heavy exploratory models
+- early failed GAMs at team level
+
+---
+
+## Small writeup suggestion
+
+In Methods/Results, frame the models as:
+
+- **Baseline**
+- **Mechanism**
+- **Main team-level test**
+- **Robustness check**

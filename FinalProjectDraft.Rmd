@@ -188,44 +188,36 @@ Does team performance increase with total payroll, and does salary concentration
 
 ### Model specification
 
-```{r}
-model1 <- lm(
-  xgd ~ log_salary + dp_salary_share + u22_count +
-        log_salary:dp_salary_share,
-  data = team_model_data
-)
+#### Baseline Model
 
-summary(model1)
+$$
+xGD_{it} = \beta_0 + \beta_1 \log(\text{Salary}_{it}) + \gamma_t + \varepsilon{it}
+$$
 
-broom::tidy(model1, conf.int = TRUE)
-```
+#### Player Level GAM
 
-```{r}
-gam1 <- gam(
-  xgd ~ s(log_salary, k = 4) + s(dp_salary_share, k = 4) + s(top3_share,k=4) + u22_count ,
-  data = team_model_data,
-  method = "REML"
-)
+$$
+GAAR_{ijt} = f(\log(\text{Salary}_{ijt})) + \delta{pos(j)} + f_{pos(j)}(\log(\text{Salary}_{ijt})) + \varepsilon_{ijt}
+$$
 
-summary(gam1)
+#### Team Level Construction
 
-plot(gam1,pages = 1, residuals = TRUE)
-gam.check(gam1)
-```
+$$
+\widehat{V}{it} = \sum_{j \in i,t} \widehat{GAAR}_{ijt} \cdot \frac{\text{Minutes}_{ijt}}{90}
+$$
 
-```{r}
-player_season <- player_season |>
-  mutate(predicted_value = predict(fit_player_gam, newdata = player_season))
+#### Team Efficiency Model
 
-team_efficiency <- player_season |>
-  group_by(team_id) |>
-  summarize(
-    predicted_team_value = sum(predicted_value, na.rm = TRUE),
-    total_salary = sum(base_salary, na.rm = TRUE),
-    value_per_dollar = predicted_team_value / total_salary,
-    .groups = "drop"
-  )
-```
+$$
+xGD_{it} = \beta_0 + \beta_1 \widehat{V}_{it} + \beta_2 \text{Salary}_{it} + \beta_3 \text{Age}_{it}
++ \beta_4 \text{PctAtt}_{it} +\beta_5 \text{PctMid}_{it} + \gamma_t + \varepsilon_{it}
+$$
+
+#### Team Multilevel Model
+
+$$
+xGD_{it} = \beta_0 + \beta_1 V^{*}_{it} + \beta_2 S^{*}_{it} + \beta_3 A_{it} + \beta_4 P^{att}_{it} + \beta_5 P^{mid}_{it} + u_i + v_t + \varepsilon_{it}
+$$
 
 ### Assumptions
 	•	Linearity
