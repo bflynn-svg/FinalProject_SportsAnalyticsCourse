@@ -37,6 +37,7 @@ team_efficiency_model_ml <- readRDS("Models/team_efficiency_model_ml.rds")
 panel_team_data <- readRDS("Models/panel_team_data.rds")
 player_season <- readRDS("Models/player_season.rds")
 team_efficiency_model_data <- readRDS("Models/team_efficiency_model_data.rds")
+team_efficiency_model_ml_ext2 <- readRDS("Models/team_efficiency_model_ml_ext2.rds")
 ```
 
 # Introduction
@@ -61,7 +62,7 @@ We use publicly available MLS salary and performance data to evaluate multiple s
 
 ## Preview of Results
 
-NEED TO ADD
+Team success in MLS is not determined by how much teams spend, but by how efficiently they convert salary into player performance.
 
 # Data
 
@@ -242,7 +243,12 @@ $$
 #### Team Multilevel Model
 
 $$
-xGD_{it} = \beta_0 + \beta_1 V^{*}_{it} + \beta_2 S^{*}_{it} + \beta_3 A_{it} + \beta_4 P^{att}_{it} + \beta_5 P^{mid}_{it} + u_i + v_t + \varepsilon_{it}
+\begin{align*}
+xGD_{it} &= \beta_0 + \beta_1 \,\text{Value}_{it} + \beta_2 \,\text{Salary}_{it} + \beta_3 \,\text{Age}_{it} \\
+&\quad + \beta_4 \,\text{Top3Share}_{it} + \beta_5 \,\text{U22}_{it} \\
+&\quad + \beta_6 \,\text{ForwardShare}_{it} + \beta_7 \,\text{MidfieldShare}_{it} \\
+&\quad + u_i + \epsilon_{it}
+\end{align*}
 $$
 
 ### Assumptions
@@ -351,36 +357,42 @@ knitr::kable(
 
 
 # -------------------------
-# Multilevel model (fixed effects)
+# Extended multilevel model (fixed effects)
 # -------------------------
 
 ml_fixed_tbl <- broom.mixed::tidy(
-  team_efficiency_model_ml,
+  team_efficiency_model_ml_ext2,
   effects = "fixed",
   conf.int = TRUE
-)
+) |>
+  mutate(
+    across(where(is.numeric), ~round(.x, 3))
+  )
 
 knitr::kable(
   ml_fixed_tbl,
   digits = 3,
-  caption = "Multilevel Model: Fixed Effects"
+  caption = "Extended Multilevel Model: Fixed Effects"
 )
 
 
 # -------------------------
-# Multilevel model (random effects)
+# Extended multilevel model (random effects)
 # -------------------------
 
 ran_pars_tbl <- broom.mixed::tidy(
-  team_efficiency_model_ml,
+  team_efficiency_model_ml_ext2,
   effects = "ran_pars",
   conf.int = TRUE
-)
+) |>
+  mutate(
+    across(where(is.numeric), ~round(.x, 3))
+  )
 
 knitr::kable(
   ran_pars_tbl,
   digits = 3,
-  caption = "Multilevel Model: Random Effects"
+  caption = "Extended Multilevel Model: Random Effects"
 )
 ```
 
@@ -403,6 +415,41 @@ Adding team-level controls such as age and roster composition does not change th
 #### Multilevel Team Model
 
 Additional results provide further context. Team age has a negative and significant effect, suggesting older teams tend to perform worse even after controlling for value and spending, while roster composition variables do not have strong independent effects. A multilevel model incorporating team and season random effects confirms substantial unobserved heterogeneity, but the core findings remain unchanged: player value is strongly positively associated with performance, and salary is negatively associated once value is accounted for. This demonstrates that the main results are robust to differences across teams and seasons.
+
+Then interpretation:
+	•	$\beta_1 > 0$: higher player value improves performance
+	•	$\beta_2 < 0$: overpaying reduces performance
+	•	$\beta_4 > 0$: top-heavy salary structures improve outcomes
+	•	$\beta_5 \approx 0$: no clear U22 effect
+	•	$\beta_6, \beta_7 \approx 0$: no clear positional allocation effect
+	
+Emphasize (these are strong)
+
+- Value vs salary (efficiency)
+- Top3 concentration effect
+
+Neutral / exploratory
+
+- Age
+
+Downplay
+
+- U22 proxy (data limitation)
+- Positional shares
+
+#### Answer to Research Question
+
+Across all modeling approaches, we find that team performance in MLS is not driven simply by total payroll or salary concentration, but rather by how effectively teams translate spending into on-field production.
+
+The baseline linear model shows that total payroll and salary concentration alone have weak explanatory power for team performance, with low $R^2$ and statistically insignificant coefficients. This suggests that aggregate spending levels do not meaningfully differentiate successful and unsuccessful teams.
+
+At the player level, the generalized additive model (GAM) reveals a strong but nonlinear relationship between salary and performance, with substantial heterogeneity across positions. This indicates that while higher salaries are generally associated with better individual performance, the marginal returns to spending vary depending on how salary is allocated across players and positions.
+
+When aggregating player-level predicted value to the team level, team performance becomes highly predictable. The team-level model shows that predicted player value is strongly positively associated with performance, while total salary, conditional on value, has a negative and statistically significant effect. This implies that inefficiency in spending—paying more for the same level of production—is detrimental to team success.
+
+Finally, the multilevel model confirms that these relationships are robust to unobserved heterogeneity across teams and seasons. The positive effect of player value and the negative conditional effect of salary persist even after accounting for random effects.
+
+Taken together, these results suggest that roster construction strategy in MLS is best understood through the lens of efficiency rather than scale. Successful teams are not necessarily those that spend the most, but those that allocate salary in a way that maximizes player value per dollar.
 
 ## Individual Analysis 2 Results (Nick)
 

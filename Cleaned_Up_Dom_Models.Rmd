@@ -212,12 +212,80 @@ broom.mixed::tidy(team_efficiency_model_ml, effects = "ran_pars", conf.int = TRU
 broom.mixed::tidy(team_efficiency_model_ml, effects = "ran_vals", conf.int = TRUE)
 ```
 
+```{r, include = FALSE}
+top3_tbl <- player_season |>
+  group_by(team_id, season_name) |>
+  arrange(desc(base_salary), .by_group = TRUE) |>
+  mutate(rank = row_number()) |>
+  summarize(
+    top3_salary = sum(base_salary[rank <= 3], na.rm = TRUE),
+    total_salary = sum(base_salary, na.rm = TRUE),
+    top3_share = top3_salary / total_salary,
+    .groups = "drop"
+  )
+
+u22_tbl <- player_season |>
+  mutate(u22_proxy_conservative = age <= 22 & base_salary >= 200000 & base_salary <= 750000) |>
+  group_by(team_id, season_name) |>
+  summarize(
+    u22_proxy_count = sum(u22_proxy_conservative, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+pos_tbl <- player_season |>
+  group_by(team_id, season_name, position) |>
+  summarize(
+    pos_salary = sum(base_salary, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  group_by(team_id, season_name) |>
+  mutate(
+    total_salary = sum(pos_salary),
+    pos_share = pos_salary / total_salary
+  ) |>
+  select(-pos_salary, -total_salary) |>
+  filter(!is.na(position)) |>
+  tidyr::pivot_wider(
+    names_from = position,
+    values_from = pos_share,
+    values_fill = 0
+  ) |>
+  rename(
+    share_D = D,
+    share_M = M,
+    share_F = F
+  )
+
+team_efficiency_model_data_ext <- team_efficiency_model_data |>
+  left_join(top3_tbl, by = c("team_id", "season_name")) |>
+  left_join(u22_tbl, by = c("team_id", "season_name")) |>
+  left_join(pos_tbl, by = c("team_id", "season_name"))
+
+team_efficiency_model_ml_ext <- lmer(
+  xgd ~ pred_val_s + salary_s + age_s +
+    top3_share + u22_proxy_count + share_F + share_M +
+    (1 | team_id) + (1 | season_name),
+  data = team_efficiency_model_data_ext
+)
+
+summary(team_efficiency_model_ml_ext)
+
+team_efficiency_model_ml_ext2 <- lmer(
+  xgd ~ pred_val_s + salary_s + age_s + top3_share + u22_proxy_count +
+    share_F + share_M + (1 | team_id),
+  data = team_efficiency_model_data_ext
+)
+
+summary(team_efficiency_model_ml_ext2)
+```
+
 ```{r}
 # Save Models
 saveRDS(panel_team_model, "Models/panel_team_model.rds")
 saveRDS(fit_player_gam, "Models/fit_player_gam.rds")
 saveRDS(team_efficiency_model, "Models/team_efficiency_model.rds")
 saveRDS(team_efficiency_model_ml, "Models/team_efficiency_model_ml.rds")
+saveRDS(team_efficiency_model_ml_ext2, "Models/team_efficiency_model_ml_ext2.rds")
 
 # also save final data objects if you need plots/tables later
 saveRDS(panel_team_data, "Models/panel_team_data.rds")
